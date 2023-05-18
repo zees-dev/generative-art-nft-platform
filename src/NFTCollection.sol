@@ -4,19 +4,9 @@ pragma solidity ^0.8.19;
 import {ERC721AUpgradeable} from "erc721a-upgradeable/contracts/ERC721AUpgradeable.sol";
 import {ERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/token/common/ERC2981Upgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {IERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC165Upgradeable.sol";
-import {IERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC2981Upgradeable.sol";
-
-contract NFTCollection is
-    ERC721AUpgradeable,
-    // ERC2981Upgradeable,
-    UUPSUpgradeable,
-    OwnableUpgradeable,
-    ERC165Upgradeable
-{
+contract NFTCollection is ERC721AUpgradeable, ERC2981Upgradeable, UUPSUpgradeable, OwnableUpgradeable {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -87,10 +77,10 @@ contract NFTCollection is
         public
         view
         virtual
-        override(ERC165Upgradeable, ERC721AUpgradeable)
+        override(ERC721AUpgradeable, ERC2981Upgradeable)
         returns (bool)
     {
-        return ERC721AUpgradeable.supportsInterface(interfaceId) || interfaceId == type(IERC2981Upgradeable).interfaceId;
+        return ERC721AUpgradeable.supportsInterface(interfaceId) || ERC2981Upgradeable.supportsInterface(interfaceId);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -113,38 +103,4 @@ contract NFTCollection is
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
-
-    /*//////////////////////////////////////////////////////////////
-                            ERC2981 Upgradable
-    //////////////////////////////////////////////////////////////*/
-    struct RoyaltyInfo {
-        address receiver;
-        uint96 royaltyFraction;
-    }
-
-    RoyaltyInfo private _defaultRoyaltyInfo;
-    mapping(uint256 => RoyaltyInfo) private _tokenRoyaltyInfo;
-
-    function royaltyInfo(uint256 _tokenId, uint256 _salePrice) public view returns (address, uint256) {
-        RoyaltyInfo memory royalty = _tokenRoyaltyInfo[_tokenId];
-
-        if (royalty.receiver == address(0)) {
-            royalty = _defaultRoyaltyInfo;
-        }
-
-        uint256 royaltyAmount = (_salePrice * royalty.royaltyFraction) / _feeDenominator();
-
-        return (royalty.receiver, royaltyAmount);
-    }
-
-    function _feeDenominator() internal pure virtual returns (uint96) {
-        return 10000;
-    }
-
-    function _setDefaultRoyalty(address receiver, uint96 feeNumerator) internal virtual {
-        require(feeNumerator <= _feeDenominator(), "ERC2981: royalty fee will exceed salePrice");
-        require(receiver != address(0), "ERC2981: invalid receiver");
-
-        _defaultRoyaltyInfo = RoyaltyInfo(receiver, feeNumerator);
-    }
 }
