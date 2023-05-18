@@ -5,6 +5,5 @@ libs = ["lib"]
 
 optimizer = true
 optimizer-runs = 200
-via-ir = true
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

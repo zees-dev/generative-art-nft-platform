@@ -91,7 +91,7 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
         collections[totalCollections] = nftCollectionProxy;
         totalCollections++;
 
-        emit CollectionCreated(msg.sender, nftCollectionProxy, totalCollections - 1);
+        emit CollectionCreated(msg.sender, nftCollectionProxy, totalCollections);
 
         return nftCollectionProxy;
     }
