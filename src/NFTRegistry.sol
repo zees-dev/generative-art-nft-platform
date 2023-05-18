@@ -45,12 +45,23 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
     }
 
     function createCollection(bytes memory collectionData) external returns (address) {
-        (address _owner, string memory _name, string memory _symbol, string memory _baseTokenURI, uint256 _maxSupply, uint256 _mintPrice, uint256 _startTime, address[] memory royaltyReceivers, uint256[] memory royaltyBPS) = abi.decode(
-            collectionData,
-            (address, string, string, string, uint256, uint256, uint256, address[], uint256[]));
+        (
+            address _owner,
+            string memory _name,
+            string memory _symbol,
+            string memory _baseTokenURI,
+            uint256 _maxSupply,
+            uint256 _mintPrice,
+            uint256 _startTime,
+            address[] memory royaltyReceivers,
+            uint256[] memory royaltyBPS
+        ) = abi.decode(
+            collectionData, (address, string, string, string, uint256, uint256, uint256, address[], uint256[])
+        );
 
         // Deploy and initialize proxy for NFTCollection
-        address nftCollectionProxy = address(new BeaconProxy(
+        address nftCollectionProxy = address(
+            new BeaconProxy(
             address(nftCollectionBeacon),
             abi.encodeWithSignature(
                 "initialize(address,string,string,string,uint256,uint256,uint256,address[],uint256[])",
@@ -64,7 +75,8 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
                 royaltyReceivers,
                 royaltyBPS
             )
-        ));
+            )
+        );
 
         // Store address of NFTCollection
         collections[totalCollections] = nftCollectionProxy;
