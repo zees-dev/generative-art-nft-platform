@@ -9,7 +9,13 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {IERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC165Upgradeable.sol";
 import {IERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC2981Upgradeable.sol";
 
-contract NFTCollection is ERC721AUpgradeable, IERC2981Upgradeable, UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
+contract NFTCollection is
+    ERC721AUpgradeable,
+    IERC2981Upgradeable,
+    UUPSUpgradeable,
+    OwnableUpgradeable,
+    ERC165Upgradeable
+{
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -74,9 +80,12 @@ contract NFTCollection is ERC721AUpgradeable, IERC2981Upgradeable, UUPSUpgradeab
         startTime = _startTime;
 
         require(_royaltyReceivers.length == _royaltyBPS.length, "NFT: invalid royalties; length mismatch");
-        for (uint256 i = 0; i < _royaltyReceivers.length; i++) {
+        for (uint256 i = 0; i < _royaltyReceivers.length;) {
             royalties.receivers.push(payable(_royaltyReceivers[i]));
             royalties.receiverToBPS[_royaltyReceivers[i]] = _royaltyBPS[i];
+            unchecked {
+                i++;
+            }
         }
     }
 
@@ -94,17 +103,23 @@ contract NFTCollection is ERC721AUpgradeable, IERC2981Upgradeable, UUPSUpgradeab
 
     function royaltyInfo(uint256 _tokenId, uint256 _salePrice) external view returns (address, uint256) {
         uint256 totalRoyalty = 0;
-        for (uint256 i = 0; i < royalties.receivers.length; i++) {
+        for (uint256 i = 0; i < royalties.receivers.length;) {
             totalRoyalty += _salePrice * royalties.receiverToBPS[royalties.receivers[i]] / 10000;
+            unchecked {
+                i++;
+            }
         }
         return (address(this), totalRoyalty);
     }
 
     receive() external payable {
-        for (uint256 i = 0; i < royalties.receivers.length; i++) {
+        for (uint256 i = 0; i < royalties.receivers.length;) {
             uint256 royaltyAmount = msg.value * royalties.receiverToBPS[royalties.receivers[i]] / 10000;
             royalties.receivers[i].call{value: royaltyAmount}("");
             emit RoyaltyPaid(royalties.receivers[i], royaltyAmount);
+            unchecked {
+                i++;
+            }
         }
     }
 
@@ -138,8 +153,11 @@ contract NFTCollection is ERC721AUpgradeable, IERC2981Upgradeable, UUPSUpgradeab
     {
         require(_royaltyReceivers.length == _royaltyBPS.length, "NFT: invalid input");
         royalties.receivers = _royaltyReceivers;
-        for (uint256 i = 0; i < _royaltyReceivers.length; i++) {
+        for (uint256 i = 0; i < _royaltyReceivers.length;) {
             royalties.receiverToBPS[_royaltyReceivers[i]] = _royaltyBPS[i];
+            unchecked {
+                i++;
+            }
         }
         emit RoyaltiesUpdated(_royaltyReceivers, _royaltyBPS);
     }
