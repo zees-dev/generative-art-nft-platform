@@ -6,7 +6,9 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+
+import {RoyaltySplitter} from "./RoyaltySplitter.sol";
 
 contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
     /*//////////////////////////////////////////////////////////////
@@ -50,19 +52,17 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
             uint256 _maxSupply,
             uint256 _mintPrice,
             uint256 _startTime,
-            address[] memory royaltyReceivers,
-            uint256[] memory royaltyBPS
+            address[] memory _royaltyReceivers,
+            uint256[] memory _royaltyBPS
         ) = abi.decode(
             collectionData, (address, string, string, string, uint256, uint256, uint256, address[], uint256[])
         );
 
-        ERC1967Proxy paymentProxy = new ERC1967Proxy(
-            royaltySplitterImpl,
-            abi.encodeWithSignature("initialize(address[],uint256[])", royaltyReceivers, royaltyBPS)
-        );
+        address royaltySplitter = Clones.clone(royaltySplitterImpl);
+        RoyaltySplitter(payable(royaltySplitter)).initialize(_royaltyReceivers, _royaltyBPS);
         uint96 royaltyAmount;
-        for (uint256 i = 0; i < royaltyBPS.length;) {
-            royaltyAmount += uint96(royaltyBPS[i]);
+        for (uint256 i = 0; i < _royaltyBPS.length;) {
+            royaltyAmount += uint96(_royaltyBPS[i]);
             unchecked {
                 i++;
             }
@@ -81,7 +81,7 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
                     _maxSupply,
                     _mintPrice,
                     _startTime,
-                    address(paymentProxy),
+                    royaltySplitter,
                     royaltyAmount
                 )
             )
