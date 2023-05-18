@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {ERC721AUpgradeable} from "erc721a-upgradeable/contracts/ERC721AUpgradeable.sol";
+import {ERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/token/common/ERC2981Upgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -11,7 +12,7 @@ import {IERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/interface
 
 contract NFTCollection is
     ERC721AUpgradeable,
-    IERC2981Upgradeable,
+    // ERC2981Upgradeable,
     UUPSUpgradeable,
     OwnableUpgradeable,
     ERC165Upgradeable
@@ -20,20 +21,9 @@ contract NFTCollection is
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event RoyaltyPaid(address indexed _receiver, uint256 _amount);
     event BaseURIUpdated(string indexed _newBaseURI);
     event MintPriceUpdated(uint256 indexed _newMintPrice);
-    event RoyaltiesUpdated(address payable[] indexed _newReceivers, uint256[] indexed _newBPS);
-    event Withdrawn(address indexed _receiver, uint256 _amount);
-
-    /*//////////////////////////////////////////////////////////////
-                                STRUCTS
-    //////////////////////////////////////////////////////////////*/
-
-    struct Royalties {
-        address payable[] receivers;
-        mapping(address => uint256) receiverToBPS;
-    }
+    event RoyaltiesUpdated(address _royaltyReceiver, uint256 _royaltyAmount);
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -43,7 +33,6 @@ contract NFTCollection is
     uint256 public maxSupply;
     uint256 public mintPrice;
     uint256 public startTime;
-    Royalties royalties;
 
     /*//////////////////////////////////////////////////////////////
                                 LOGIC
@@ -65,8 +54,8 @@ contract NFTCollection is
         uint256 _maxSupply,
         uint256 _mintPrice,
         uint256 _startTime,
-        address[] calldata _royaltyReceivers,
-        uint256[] memory _royaltyBPS
+        address _royaltyReceiver,
+        uint96 _royaltyAmount
     ) public initializerERC721A initializer {
         __ERC721A_init(_name, _symbol);
         __Ownable_init();
@@ -79,14 +68,7 @@ contract NFTCollection is
         require(_startTime > block.timestamp, "NFT: invalid start time");
         startTime = _startTime;
 
-        require(_royaltyReceivers.length == _royaltyBPS.length, "NFT: invalid royalties; length mismatch");
-        for (uint256 i = 0; i < _royaltyReceivers.length;) {
-            royalties.receivers.push(payable(_royaltyReceivers[i]));
-            royalties.receiverToBPS[_royaltyReceivers[i]] = _royaltyBPS[i];
-            unchecked {
-                i++;
-            }
-        }
+        _setDefaultRoyalty(_royaltyReceiver, _royaltyAmount);
     }
 
     function _baseURI() internal view override returns (string memory) {
@@ -98,36 +80,14 @@ contract NFTCollection is
         require(totalSupply() + _quantity <= maxSupply, "NFT: max supply reached");
         require(msg.value >= mintPrice * _quantity, "NFT: insufficient funds");
 
-        _mint(msg.sender, _quantity);
-    }
-
-    function royaltyInfo(uint256 _tokenId, uint256 _salePrice) external view returns (address, uint256) {
-        uint256 totalRoyalty = 0;
-        for (uint256 i = 0; i < royalties.receivers.length;) {
-            totalRoyalty += _salePrice * royalties.receiverToBPS[royalties.receivers[i]] / 10000;
-            unchecked {
-                i++;
-            }
-        }
-        return (address(this), totalRoyalty);
-    }
-
-    receive() external payable {
-        for (uint256 i = 0; i < royalties.receivers.length;) {
-            uint256 royaltyAmount = msg.value * royalties.receiverToBPS[royalties.receivers[i]] / 10000;
-            royalties.receivers[i].call{value: royaltyAmount}("");
-            emit RoyaltyPaid(royalties.receivers[i], royaltyAmount);
-            unchecked {
-                i++;
-            }
-        }
+        _safeMint(msg.sender, _quantity, "");
     }
 
     function supportsInterface(bytes4 interfaceId)
         public
         view
         virtual
-        override(IERC165Upgradeable, ERC165Upgradeable, ERC721AUpgradeable)
+        override(ERC165Upgradeable, ERC721AUpgradeable)
         returns (bool)
     {
         return ERC721AUpgradeable.supportsInterface(interfaceId) || interfaceId == type(IERC2981Upgradeable).interfaceId;
@@ -147,26 +107,44 @@ contract NFTCollection is
         emit MintPriceUpdated(_mintPrice);
     }
 
-    function setRoyalties(address payable[] calldata _royaltyReceivers, uint256[] calldata _royaltyBPS)
-        external
-        onlyOwner
-    {
-        require(_royaltyReceivers.length == _royaltyBPS.length, "NFT: invalid input");
-        royalties.receivers = _royaltyReceivers;
-        for (uint256 i = 0; i < _royaltyReceivers.length;) {
-            royalties.receiverToBPS[_royaltyReceivers[i]] = _royaltyBPS[i];
-            unchecked {
-                i++;
-            }
-        }
-        emit RoyaltiesUpdated(_royaltyReceivers, _royaltyBPS);
-    }
-
-    function withdrawFunds(address payable _to) external onlyOwner {
-        uint256 balance = address(this).balance;
-        _to.call{value: balance}("");
-        emit Withdrawn(_to, balance);
+    function setRoyalties(address _royaltyReceiver, uint96 _royaltyAmount) external onlyOwner {
+        _setDefaultRoyalty(_royaltyReceiver, _royaltyAmount);
+        emit RoyaltiesUpdated(_royaltyReceiver, _royaltyAmount);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    /*//////////////////////////////////////////////////////////////
+                            ERC2981 Upgradable
+    //////////////////////////////////////////////////////////////*/
+    struct RoyaltyInfo {
+        address receiver;
+        uint96 royaltyFraction;
+    }
+
+    RoyaltyInfo private _defaultRoyaltyInfo;
+    mapping(uint256 => RoyaltyInfo) private _tokenRoyaltyInfo;
+
+    function royaltyInfo(uint256 _tokenId, uint256 _salePrice) public view returns (address, uint256) {
+        RoyaltyInfo memory royalty = _tokenRoyaltyInfo[_tokenId];
+
+        if (royalty.receiver == address(0)) {
+            royalty = _defaultRoyaltyInfo;
+        }
+
+        uint256 royaltyAmount = (_salePrice * royalty.royaltyFraction) / _feeDenominator();
+
+        return (royalty.receiver, royaltyAmount);
+    }
+
+    function _feeDenominator() internal pure virtual returns (uint96) {
+        return 10000;
+    }
+
+    function _setDefaultRoyalty(address receiver, uint96 feeNumerator) internal virtual {
+        require(feeNumerator <= _feeDenominator(), "ERC2981: royalty fee will exceed salePrice");
+        require(receiver != address(0), "ERC2981: invalid receiver");
+
+        _defaultRoyaltyInfo = RoyaltyInfo(receiver, feeNumerator);
+    }
 }

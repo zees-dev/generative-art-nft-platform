@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.19;
 
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
-import {NFTCollection} from "./NFTCollection.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
     /*//////////////////////////////////////////////////////////////
@@ -22,6 +20,7 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
     //////////////////////////////////////////////////////////////*/
 
     UpgradeableBeacon public nftCollectionBeacon;
+    address public royaltySplitterImpl;
     uint256 public totalCollections;
     mapping(uint256 => address) public collections;
 
@@ -34,14 +33,12 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
         _disableInitializers();
     }
 
-    function initialize() external initializer {
+    function initialize(address _royaltySplitterImpl, address _nftCollectionImpl) external initializer {
         __Ownable_init();
 
-        // Deploy reference implementation for NFTCollection
-        // NFTCollection nftCollection = new NFTCollection();
-
+        royaltySplitterImpl = _royaltySplitterImpl;
         // Deploy beacon for NFTCollection
-        // nftCollectionBeacon = new UpgradeableBeacon(address(nftCollection));
+        nftCollectionBeacon = new UpgradeableBeacon(address(_nftCollectionImpl));
     }
 
     function createCollection(bytes memory collectionData) external returns (address) {
@@ -59,22 +56,34 @@ contract NFTRegistry is UUPSUpgradeable, OwnableUpgradeable, ERC165Upgradeable {
             collectionData, (address, string, string, string, uint256, uint256, uint256, address[], uint256[])
         );
 
+        ERC1967Proxy paymentProxy = new ERC1967Proxy(
+            royaltySplitterImpl,
+            abi.encodeWithSignature("initialize(address[],uint256[])", royaltyReceivers, royaltyBPS)
+        );
+        uint96 royaltyAmount;
+        for (uint256 i = 0; i < royaltyBPS.length;) {
+            royaltyAmount += uint96(royaltyBPS[i]);
+            unchecked {
+                i++;
+            }
+        }
+
         // Deploy and initialize proxy for NFTCollection
         address nftCollectionProxy = address(
             new BeaconProxy(
             address(nftCollectionBeacon),
             abi.encodeWithSignature(
-                "initialize(address,string,string,string,uint256,uint256,uint256,address[],uint256[])",
-                _owner,
-                _name,
-                _symbol,
-                _baseTokenURI,
-                _maxSupply,
-                _mintPrice,
-                _startTime,
-                royaltyReceivers,
-                royaltyBPS
-            )
+                    "initialize(address,string,string,string,uint256,uint256,uint256,address,uint96)",
+                    _owner,
+                    _name,
+                    _symbol,
+                    _baseTokenURI,
+                    _maxSupply,
+                    _mintPrice,
+                    _startTime,
+                    address(paymentProxy),
+                    royaltyAmount
+                )
             )
         );
 
